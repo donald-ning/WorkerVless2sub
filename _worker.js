@@ -11,7 +11,7 @@ let addresses = [
 
 // 设置优选地址api接口
 let addressesapi = [
-	'https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/addressesapi.txt', //可参考内容格式 自行搭建。
+	'https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/addressesapi.txt?proxyip=true', //可参考内容格式 自行搭建。
 	//'https://raw.githubusercontent.com/cmliu/WorkerVless2sub/main/addressesipv6api.txt', //IPv6优选内容格式 自行搭建。
 ];
 
@@ -91,10 +91,9 @@ async function sendMessage(type, ip, add_data = "") {
 }
 
 let MamaJustKilledAMan = ['telegram','twitter','miaoko'];
+let proxyIPPool = [];
 async function getAddressesapi(api) {
-	if (!api || api.length === 0) {
-		return [];
-	}
+	if (!api || api.length === 0) return [];
 
 	let newapi = "";
 
@@ -118,11 +117,18 @@ async function getAddressesapi(api) {
 		}).then(response => response.ok ? response.text() : Promise.reject())));
 
 		// 遍历所有响应
-		for (const response of responses) {
+		for (const [index, response] of responses.entries()) {
 			// 检查响应状态是否为'fulfilled'，即请求成功完成
 			if (response.status === 'fulfilled') {
 				// 获取响应的内容
 				const content = await response.value;
+
+				// 验证当前apiUrl是否带有'proxyip=true'
+				if (api[index].includes('proxyip=true')) {
+					// 如果URL带有'proxyip=true'，则将内容添加到proxyIPPool
+					proxyIPPool = proxyIPPool.concat((await ADD(content)).map(item => item.split('#')[0]));
+				}
+				// 将内容添加到newapi中
 				newapi += content + '\n';
 			}
 		}
@@ -188,6 +194,10 @@ async function getAddressescsv(tls) {
 			
 					const formattedAddress = `${ipAddress}:${port}#${dataCenter}`;
 					newAddressescsv.push(formattedAddress);
+					if (csvUrl.includes('proxyip=true') && columns[tlsIndex].toUpperCase() == 'true') {
+						// 如果URL带有'proxyip=true'，则将内容添加到proxyIPPool
+						proxyIPPool.push(`${ipAddress}:${port}`);
+					}
 				}
 			}
 		} catch (error) {
@@ -486,7 +496,7 @@ export default {
 				const uniqueAddressesnotls = [...new Set(addressesnotls)];
 
 				notlsresponseBody = uniqueAddressesnotls.map(address => {
-					let port = "80";
+					let port = "-1";
 					let addressid = address;
 				
 					const match = addressid.match(regex);
@@ -517,7 +527,7 @@ export default {
 					}
 
 					const httpPorts = ["8080","8880","2052","2082","2086","2095"];
-					if (!isValidIPv4(address) && port == "80") {
+					if (!isValidIPv4(address) && port == "-1") {
 						for (let httpPort of httpPorts) {
 							if (address.includes(httpPort)) {
 								port = httpPort;
@@ -525,6 +535,7 @@ export default {
 							}
 						}
 					}
+					if (port == "-1") port = "80";
 					//console.log(address, port, addressid);
 
 					if (edgetunnel.trim() === 'cmliu' && RproxyIP.trim() === 'true') {
@@ -564,7 +575,7 @@ export default {
 			}
 
 			const responseBody = uniqueAddresses.map(address => {
-				let port = "443";
+				let port = "-1";
 				let addressid = address;
 			
 				const match = addressid.match(regex);
@@ -595,7 +606,7 @@ export default {
 				}
 
 				const httpsPorts = ["2053","2083","2087","2096","8443"];
-				if (!isValidIPv4(address) && port == "443") {
+				if (!isValidIPv4(address) && port == "-1") {
 					for (let httpsPort of httpsPorts) {
 						if (address.includes(httpsPort)) {
 							port = httpsPort;
@@ -603,6 +614,8 @@ export default {
 						}
 					}
 				}
+				if (port == "-1") port = "443";
+				
 				//console.log(address, port, addressid);
 		
 				if (edgetunnel.trim() === 'cmliu' && RproxyIP.trim() === 'true') {
@@ -622,8 +635,10 @@ export default {
 								break; // 找到匹配项，跳出循环
 							}
 						}
-					
-						if (foundProxyIP) {
+						
+						if (proxyIPPool.includes(`${address}:${port}`) && !httpsPorts.includes(port)){
+							path = `/?proxyip=${address}:${port}`;
+						} else if (foundProxyIP) {
 							// 如果找到匹配的proxyIP，赋值给path
 							path = `/?proxyip=${foundProxyIP}`;
 						} else {
